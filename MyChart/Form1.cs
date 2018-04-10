@@ -1,11 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Data;
 using System.Data.OleDb;
-using System.Drawing;
 using System.IO.Ports;
-using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 
@@ -15,7 +11,9 @@ namespace MyChart
     {
         SerialPort serialPort;
         readonly string DATE_FORMAT = "dd.MM.yyyy HH:mm:ss";
+        readonly string dateFormatFileName = "yyyy-MM-dd-HH-mm-ss";
         private int iter = 0;
+        private String fileName;
 
         //todo: https://habrahabr.ru/post/204308/
         public Form1()
@@ -100,6 +98,15 @@ namespace MyChart
                 buttonStart.Enabled = false;
                 buttonStop.Enabled = true;
                 buttonRescan.Enabled = false;
+
+                if (checkBoxSaveFile.CheckState == CheckState.Checked)
+                {
+                    fileName = DateTime.Now.ToString(dateFormatFileName);
+                }
+                else
+                {
+                    fileName = null;
+                }
             }
             catch (Exception ex)
             {
@@ -135,8 +142,15 @@ namespace MyChart
 
         private void serialPort2_DataReceived(object sender, System.IO.Ports.SerialDataReceivedEventArgs e)
         {
-            string pot = serialPort.ReadLine();
-            BeginInvoke(new LineReceivedEvent(LineReceived), pot);
+            try
+            {
+                string pot = serialPort.ReadLine();
+                BeginInvoke(new LineReceivedEvent(LineReceived), pot);
+            }
+            catch (Exception ex)
+            {
+
+            }
         }
 
         private delegate void LineReceivedEvent(string POT);
@@ -146,6 +160,11 @@ namespace MyChart
         int xCalibration = 0;
         int yCalibration = 0;
         int zCalibration = 0;
+
+        readonly double K = 0.1;
+        int newX, oldX;
+        int newY, oldY;
+        int newZ, oldZ;
 
         private void LineReceived(string line)
         {
@@ -188,25 +207,73 @@ namespace MyChart
                         xCalibration = xCalibration / calibrationCount;
                         yCalibration = yCalibration / calibrationCount;
                         zCalibration = zCalibration / calibrationCount;
-/*
-                        file.WriteLine("===============");
-                        StringBuilder save2 = new StringBuilder();
-                        save2.Append(xCalibration);
-                        save2.Append(";");
-                        save2.Append(yCalibration);
-                        save2.Append(";");
-                        save2.Append(zCalibration);
-                        file.WriteLine(save2.ToString());
-                        file.WriteLine("===============");
-*/
+                        /*
+                                                file.WriteLine("===============");
+                                                StringBuilder save2 = new StringBuilder();
+                                                save2.Append(xCalibration);
+                                                save2.Append(";");
+                                                save2.Append(yCalibration);
+                                                save2.Append(";");
+                                                save2.Append(zCalibration);
+                                                file.WriteLine(save2.ToString());
+                                                file.WriteLine("===============");
+                        */
                     }
                 }
             }
             else
             {
-                chart1.Series["Name X"].Points.AddXY(iter, x - xCalibration);
-                chart1.Series["Name Y"].Points.AddXY(iter, y - yCalibration);
-                chart1.Series["Name Z"].Points.AddXY(iter, z - zCalibration);
+                int xPoint = x - xCalibration;
+                int yPoint = y - yCalibration;
+                int zPoint = z - zCalibration;
+
+                //http://www.g0l.ru/blog/n3136
+                // low-pass filter   
+                int newX = Convert.ToInt32((xPoint * K) + (oldX * (1.0 - K)));
+                int newY = Convert.ToInt32((yPoint * K) + (oldY * (1.0 - K)));
+                int newZ = Convert.ToInt32((zPoint * K) + (oldZ * (1.0 - K)));
+
+                oldX = newX;
+                oldY = newY;
+                oldZ = newZ;
+
+                // high-pass filter   
+                //newX = x - (x * K) + (oldX * (1.0 -  K));  
+                //newY = y - (y * K) + (oldY * (1.0 -  K));  
+                //newZ = z - (z * K) + (oldZ * (1.0 -  K));  
+
+
+                if (fileName != null)
+                {
+                    using (System.IO.StreamWriter file = new System.IO.StreamWriter(fileName + ".csv", true))
+                    {
+                        StringBuilder save = new StringBuilder();
+                        String now = DateTime.Now.ToString(DATE_FORMAT);
+                        save.Append(now);
+                        save.Append(";");
+                        save.Append(xPoint);
+                        save.Append(";");
+                        save.Append(yPoint);
+                        save.Append(";");
+                        save.Append(zPoint);
+                        //save.Append(";");
+                        //save.Append(newX);
+                        //save.Append(";");
+                        //save.Append(newY);
+                        //save.Append(";");
+                        //save.Append(newZ);
+                        file.WriteLine(save.ToString());
+                    }
+                }
+                chart1.Series["Name X"].Points.AddXY(iter, newX);
+                chart1.Series["Name Y"].Points.AddXY(iter, newY);
+                chart1.Series["Name Z"].Points.AddXY(iter, newZ);
+
+                /*
+                chart1.Series["Name X"].Points.AddXY(iter, xPoint);
+                chart1.Series["Name Y"].Points.AddXY(iter, yPoint);
+                chart1.Series["Name Z"].Points.AddXY(iter, zPoint);
+                */
                 iter++;
             }
         }
